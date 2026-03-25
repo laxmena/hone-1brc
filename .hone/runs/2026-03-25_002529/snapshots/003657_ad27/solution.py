@@ -4,51 +4,39 @@ import mmap
 from multiprocessing import Pool, cpu_count
 
 
-def _build_temp_lookup():
-    lookup = {}
-    for i in range(-999, 1000):
-        s = f"{i/10:.1f}".encode()
-        lookup[s] = i
-    return lookup
-
-_TEMP_LOOKUP = _build_temp_lookup()
-
-
 def process_chunk(args):
     filepath, start, end = args
     stats = {}
-    temp_lookup = _TEMP_LOOKUP
 
     with open(filepath, 'rb') as f:
         mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
         chunk = mm[start:end]
         mm.close()
 
-    stats_get = stats.get
-
     for line in chunk.split(b'\n'):
         if not line:
             continue
 
+        # Use partition - single C-level call, no index needed
         station, sep, tb = line.partition(b';')
         if not sep:
             continue
 
-        val = temp_lookup.get(tb)
-        if val is None:
-            d0 = tb[-1] - 48
-            if tb[0] == 45:
-                if len(tb) == 4:
-                    val = -((tb[1] - 48) * 10 + d0)
-                else:
-                    val = -((tb[1] - 48) * 100 + (tb[2] - 48) * 10 + d0)
-            else:
-                if len(tb) == 3:
-                    val = (tb[0] - 48) * 10 + d0
-                else:
-                    val = (tb[0] - 48) * 100 + (tb[1] - 48) * 10 + d0
+        # Parse temperature as integer (tenths of degree)
+        # Format: [-]D.D or [-]DD.D
+        d0 = tb[-1] - 48
+        if tb[0] == 45:  # '-'
+            if len(tb) == 4:  # -D.D
+                val = -((tb[1] - 48) * 10 + d0)
+            else:             # -DD.D
+                val = -((tb[1] - 48) * 100 + (tb[2] - 48) * 10 + d0)
+        else:
+            if len(tb) == 3:  # D.D
+                val = (tb[0] - 48) * 10 + d0
+            else:             # DD.D
+                val = (tb[0] - 48) * 100 + (tb[1] - 48) * 10 + d0
 
-        entry = stats_get(station)
+        entry = stats.get(station)
         if entry:
             if val < entry[0]:
                 entry[0] = val
@@ -64,10 +52,9 @@ def process_chunk(args):
 
 def merge_stats(all_stats):
     merged = {}
-    merged_get = merged.get
     for stats in all_stats:
         for station, (mn, mx, total, count) in stats.items():
-            entry = merged_get(station)
+            entry = merged.get(station)
             if entry:
                 if mn < entry[0]:
                     entry[0] = mn

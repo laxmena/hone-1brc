@@ -4,6 +4,7 @@ import mmap
 from multiprocessing import Pool, cpu_count
 
 
+# Pre-build lookup table for all possible temperature byte strings -> int value
 def _build_temp_lookup():
     lookup = {}
     for i in range(-999, 1000):
@@ -25,12 +26,15 @@ def process_chunk(args):
         mm.close()
 
     stats_get = stats.get
+    # Use splitlines=False, split on newline only
+    split = chunk.split(b'\n')
+    partition = bytes.partition
 
-    for line in chunk.split(b'\n'):
+    for line in split:
         if not line:
             continue
 
-        station, sep, tb = line.partition(b';')
+        station, sep, tb = partition(line, b';')
         if not sep:
             continue
 

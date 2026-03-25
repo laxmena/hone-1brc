@@ -4,10 +4,16 @@ import mmap
 from multiprocessing import Pool, cpu_count
 
 
+# Pre-build lookup table for all possible temperature byte strings -> int value
+# Temperatures range from -99.9 to 99.9 with exactly 1 decimal place
 def _build_temp_lookup():
     lookup = {}
     for i in range(-999, 1000):
-        s = f"{i/10:.1f}".encode()
+        # format as X.X
+        if i < 0:
+            s = f"{i/10:.1f}".encode()
+        else:
+            s = f"{i/10:.1f}".encode()
         lookup[s] = i
     return lookup
 
@@ -25,7 +31,6 @@ def process_chunk(args):
         mm.close()
 
     stats_get = stats.get
-
     for line in chunk.split(b'\n'):
         if not line:
             continue
@@ -36,6 +41,7 @@ def process_chunk(args):
 
         val = temp_lookup.get(tb)
         if val is None:
+            # fallback
             d0 = tb[-1] - 48
             if tb[0] == 45:
                 if len(tb) == 4:

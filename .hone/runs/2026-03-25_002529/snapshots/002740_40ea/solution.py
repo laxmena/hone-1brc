@@ -4,52 +4,59 @@ import mmap
 from multiprocessing import Pool, cpu_count
 
 
-def _build_temp_lookup():
-    lookup = {}
-    for i in range(-999, 1000):
-        s = f"{i/10:.1f}".encode()
-        lookup[s] = i
-    return lookup
-
-_TEMP_LOOKUP = _build_temp_lookup()
-
-
 def process_chunk(args):
     filepath, start, end = args
-    stats = {}
-    temp_lookup = _TEMP_LOOKUP
+    stats = {}  # station_bytes -> [min, max, sum, count]
 
     with open(filepath, 'rb') as f:
         mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+        # Read the chunk as bytes
         chunk = mm[start:end]
         mm.close()
 
-    stats_get = stats.get
+    # Split into lines using fast C-level split
+    lines = chunk.split(b'\n')
 
-    for line in chunk.split(b'\n'):
+    for line in lines:
         if not line:
             continue
 
-        station, sep, tb = line.partition(b';')
-        if not sep:
+        # Find semicolon
+        semi = line.find(b';')
+        if semi == -1:
             continue
 
-        val = temp_lookup.get(tb)
-        if val is None:
-            d0 = tb[-1] - 48
-            if tb[0] == 45:
-                if len(tb) == 4:
-                    val = -((tb[1] - 48) * 10 + d0)
-                else:
-                    val = -((tb[1] - 48) * 100 + (tb[2] - 48) * 10 + d0)
-            else:
-                if len(tb) == 3:
-                    val = (tb[0] - 48) * 10 + d0
-                else:
-                    val = (tb[0] - 48) * 100 + (tb[1] - 48) * 10 + d0
+        station = line[:semi]
+        temp_bytes = line[semi+1:]
 
-        entry = stats_get(station)
-        if entry:
+        # Parse temperature as integer (tenths of degree)
+        # Format: optional '-', digits, '.', one digit
+        # e.g. b'-12.3' -> -123, b'4.5' -> 45
+        tb = temp_bytes
+        if tb[0] == 45:  # '-'
+            # negative
+            # find dot position
+            dot = tb.find(b'.', 1)
+            if dot == -1:
+                continue
+            # integer part: tb[1:dot], decimal: tb[dot+1]
+            int_part = tb[1:dot]
+            if len(int_part) == 1:
+                val = -(( (int_part[0] - 48) * 10) + (tb[dot+1] - 48))
+            else:  # 2 digits
+                val = -(( (int_part[0] - 48) * 100 + (int_part[1] - 48) * 10) + (tb[dot+1] - 48))
+        else:
+            dot = tb.find(b'.', 1)
+            if dot == -1:
+                continue
+            int_part = tb[:dot]
+            if len(int_part) == 1:
+                val = (int_part[0] - 48) * 10 + (tb[dot+1] - 48)
+            else:  # 2 digits
+                val = (int_part[0] - 48) * 100 + (int_part[1] - 48) * 10 + (tb[dot+1] - 48)
+
+        if station in stats:
+            entry = stats[station]
             if val < entry[0]:
                 entry[0] = val
             if val > entry[1]:
@@ -64,11 +71,10 @@ def process_chunk(args):
 
 def merge_stats(all_stats):
     merged = {}
-    merged_get = merged.get
     for stats in all_stats:
         for station, (mn, mx, total, count) in stats.items():
-            entry = merged_get(station)
-            if entry:
+            if station in merged:
+                entry = merged[station]
                 if mn < entry[0]:
                     entry[0] = mn
                 if mx > entry[1]:
@@ -116,9 +122,10 @@ def main():
     filepath = sys.argv[1]
 
     num_workers = cpu_count()
-    num_chunks = num_workers * 8
+    num_chunks = num_workers * 4
 
     boundaries = find_chunk_boundaries(filepath, num_chunks)
+
     args = [(filepath, start, end) for start, end in boundaries]
 
     with Pool(processes=num_workers) as pool:
@@ -129,17 +136,19 @@ def main():
     results = []
     for station, (mn, mx, total, count) in merged.items():
         mean_val = total / count
-        results.append((
-            station.decode('utf-8'),
-            mn / 10.0,
-            mx / 10.0,
-            mean_val / 10.0
-        ))
+        mn_f = mn / 10.0
+        mx_f = mx / 10.0
+        mean_f = mean_val / 10.0
+        results.append((station.decode('utf-8'), mn_f, mx_f, mean_f))
 
     results.sort(key=lambda x: x[0])
 
-    out = [f"{s}={mn:.1f}/{mean:.1f}/{mx:.1f}" for s, mn, mx, mean in results]
-    print("{" + ", ".join(out) + "}")
+    print("{", end="")
+    for i, (station, mn, mx, mean) in enumerate(results):
+        if i:
+            print(", ", end="")
+        print(f"{station}={mn:.1f}/{mean:.1f}/{mx:.1f}", end="")
+    print("}")
 
 
 if __name__ == "__main__":

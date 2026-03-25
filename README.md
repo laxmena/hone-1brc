@@ -83,11 +83,11 @@ To run Hone against the baseline:
 ```bash
 hone \
      --goal-file program.md \
-     --bench "python benchmark.py data/measurements_1M.txt" \
+     --bench "python benchmark.py data/measurements_100M.txt" \
      --files "solution.py" \
      --optimize lower \
      --score-pattern "Time Taken:\s*(\d+\.\d+)" \
-     --budget 5.0 \
+     --budget 3.0 \
      --max-iter 50 \
      --model claude-haiku-4-5
 ```
