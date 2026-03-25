@@ -81,7 +81,8 @@ python benchmark.py data/measurements_1M.txt
 To run Hone against the baseline:
 
 ```bash
-hone "Optimize solution.py to minimize wall-clock execution time when processing a large measurements file. The program reads lines in the format 'StationName;Temperature', computes min, mean, and max temperature per station, and prints results sorted alphabetically. Optimizations must use Python standard library only — no third-party packages. Correctness must be preserved: output format and values must remain unchanged. Focus on I/O throughput, parsing speed, and efficient aggregation." \
+hone \
+     --goal-file program.md \
      --bench "python benchmark.py data/measurements_1M.txt" \
      --files "solution.py" \
      --optimize lower \
