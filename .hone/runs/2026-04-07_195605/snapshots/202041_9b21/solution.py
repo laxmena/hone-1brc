@@ -1,7 +1,7 @@
 import sys
 import os
+import mmap
 from multiprocessing import Pool, cpu_count
-from io import BytesIO
 
 
 def _build_temp_lookup():
@@ -20,14 +20,13 @@ def process_chunk(args):
     temp_lookup = _TEMP_LOOKUP
 
     with open(filepath, 'rb') as f:
-        f.seek(start)
-        chunk = f.read(end - start)
+        mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
+        chunk = mm[start:end]
+        mm.close()
 
     stats_get = stats.get
-    bio = BytesIO(chunk)
 
-    for line in bio:
-        line = line.rstrip(b'\n')
+    for line in chunk.split(b'\n'):
         if not line:
             continue
 
@@ -37,16 +36,17 @@ def process_chunk(args):
 
         val = temp_lookup.get(tb)
         if val is None:
+            # Fast path: parse directly without intermediate variable
             tlen = len(tb)
-            if tb[0] == 45:
-                if tlen == 4:
+            if tb[0] == 45:  # negative
+                if tlen == 4:  # -X.Y
                     val = -((tb[1] - 48) * 10 + (tb[3] - 48))
-                else:
+                else:  # -XX.Y
                     val = -((tb[1] - 48) * 100 + (tb[2] - 48) * 10 + (tb[4] - 48))
-            else:
-                if tlen == 3:
+            else:  # positive
+                if tlen == 3:  # X.Y
                     val = (tb[0] - 48) * 10 + (tb[2] - 48)
-                else:
+                else:  # XX.Y
                     val = (tb[0] - 48) * 100 + (tb[1] - 48) * 10 + (tb[3] - 48)
 
         entry = stats_get(station)
@@ -123,8 +123,7 @@ def main():
     args = [(filepath, start, end) for start, end in boundaries]
 
     with Pool(processes=num_workers) as pool:
-        all_stats = pool.imap_unordered(process_chunk, args, chunksize=1)
-        all_stats = list(all_stats)
+        all_stats = pool.map(process_chunk, args)
 
     merged = merge_stats(all_stats)
 

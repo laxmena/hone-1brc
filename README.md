@@ -44,7 +44,7 @@ Output defaults to `data/measurements.txt` if no filename is given.
 ### 2. Run the solution
 
 ```bash
-python solution.py data/measurements.txt
+python solution.py data/measurements_1M.txt
 ```
 
 **Example output:**
@@ -83,7 +83,7 @@ To run Hone against the baseline:
 ```bash
 hone \
      --goal-file program.md \
-     --bench "python benchmark.py data/measurements_100M.txt" \
+     --bench "python /Users/rathla/workspace/hone-1brc/benchmark.py /Users/rathla/workspace/hone-1brc/data/measurements_1B.txt" \
      --files "solution.py" \
      --optimize lower \
      --score-pattern "Time Taken:\s*(\d+\.\d+)" \

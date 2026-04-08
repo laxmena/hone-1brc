@@ -1,7 +1,6 @@
 import sys
 import os
 from multiprocessing import Pool, cpu_count
-from io import BytesIO
 
 
 def _build_temp_lookup():
@@ -24,10 +23,8 @@ def process_chunk(args):
         chunk = f.read(end - start)
 
     stats_get = stats.get
-    bio = BytesIO(chunk)
 
-    for line in bio:
-        line = line.rstrip(b'\n')
+    for line in chunk.split(b'\n'):
         if not line:
             continue
 
@@ -123,8 +120,7 @@ def main():
     args = [(filepath, start, end) for start, end in boundaries]
 
     with Pool(processes=num_workers) as pool:
-        all_stats = pool.imap_unordered(process_chunk, args, chunksize=1)
-        all_stats = list(all_stats)
+        all_stats = pool.map(process_chunk, args)
 
     merged = merge_stats(all_stats)
 
